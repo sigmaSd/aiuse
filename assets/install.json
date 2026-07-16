@@ -1,0 +1,7 @@
+{
+  "name": "Claude Usage",
+  "id": "io.github.sigmasd.cuse",
+  "version": "0.1.0",
+  "description": "Claude.ai usage monitor — track your rate limits and spend",
+  "icon": "icon.svg"
+}
