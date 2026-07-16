@@ -10,8 +10,15 @@
  *   server doesn't make you re-enter it.
  * - A background loop polls claude.ai every POLL_INTERVAL_MS using
  *   the stored key.
- * - If the key expires (401/403), the loop clears it automatically
- *   and the frontend falls back to the key screen on its own.
+ * - Errors (auth failures, network blips, etc.) are surfaced in a
+ *   banner on the dashboard rather than guessed at. The app never
+ *   auto-clears your token on a failed poll — sometimes a 401/403 is
+ *   just a transient hiccup. Use the "reset token" button whenever
+ *   you actually want to clear it and enter a new one.
+ * - The organization id is resolved automatically from your session
+ *   key via GET /api/organizations — nobody needs to go find it
+ *   manually. Set CLAUDE_ORG_ID if you ever need to override it
+ *   (e.g. multiple orgs on one account and you want a specific one).
  *
  * Run:
  *   deno run --allow-net --allow-env usage_server.ts
@@ -19,14 +26,14 @@
  *
  * Env vars (optional):
  *   PORT            default 8787
- *   CLAUDE_ORG_ID   default is your org id below
+ *   CLAUDE_ORG_ID   override auto-detected org id (usually not needed)
  */
 
-const ORG_ID = Deno.env.get("CLAUDE_ORG_ID") ??
-  "4d41cc6d-e49f-43bf-98ee-307b1b4017c8";
+const ORG_ID_OVERRIDE = Deno.env.get("CLAUDE_ORG_ID"); // optional escape hatch
 const PORT = Number(Deno.env.get("PORT") ?? "8787");
 const POLL_INTERVAL_MS = 30_000;
 const STORAGE_KEY = "claude_session_key";
+const ORG_STORAGE_KEY = "claude_org_id";
 
 class AuthError extends Error {}
 
@@ -53,7 +60,7 @@ interface UsageResponse {
   limits?: LimitEntry[];
 }
 
-// ---- token storage: Deno's built-in Web Storage, persists across restarts ----
+// ---- token + org id storage: Deno's built-in Web Storage, persists across restarts ----
 function getToken(): string | null {
   return localStorage.getItem(STORAGE_KEY);
 }
@@ -63,16 +70,63 @@ function setToken(v: string) {
 function clearToken() {
   localStorage.removeItem(STORAGE_KEY);
 }
+function getStoredOrgId(): string | null {
+  return localStorage.getItem(ORG_STORAGE_KEY);
+}
+function setStoredOrgId(v: string) {
+  localStorage.setItem(ORG_STORAGE_KEY, v);
+}
+function clearStoredOrgId() {
+  localStorage.removeItem(ORG_STORAGE_KEY);
+}
 
 // ---- in-memory state ----
 let latestUsage: UsageResponse | null = null;
-let lastError: "auth_expired" | "fetch_failed" | null = null;
+let lastErrorKind: "auth" | "network" | null = null;
+let lastErrorMessage: string | null = null;
+let lastErrorAt: string | null = null;
 let lastFetchedAt: string | null = null;
-let pollTimer: ReturnType<typeof setTimeout> | undefined;
+let pollTimer: ReturnType<typeof setInterval> | undefined;
+
+/**
+ * Nobody should have to go hunting for their org id. If CLAUDE_ORG_ID isn't
+ * set, we ask claude.ai which org this session key belongs to (same cookie
+ * auth as everything else here) and cache the answer.
+ */
+async function resolveOrgId(token: string): Promise<string> {
+  if (ORG_ID_OVERRIDE) return ORG_ID_OVERRIDE;
+
+  const cached = getStoredOrgId();
+  if (cached) return cached;
+
+  const res = await fetch("https://claude.ai/api/organizations", {
+    headers: {
+      "Cookie": `sessionKey=${token}`,
+      "Accept": "application/json",
+      "User-Agent": "Mozilla/5.0 (usage_server.ts personal script)",
+    },
+  });
+  if (res.status === 401 || res.status === 403) {
+    throw new AuthError(`auth failed while resolving org id: ${res.status}`);
+  }
+  if (!res.ok) {
+    throw new Error(
+      `could not list organizations: ${res.status} ${res.statusText}`,
+    );
+  }
+  const orgs = await res.json() as Array<{ uuid: string; name?: string }>;
+  if (!Array.isArray(orgs) || orgs.length === 0) {
+    throw new Error("this session key has no organizations attached");
+  }
+  const orgId = orgs[0].uuid;
+  setStoredOrgId(orgId);
+  return orgId;
+}
 
 async function fetchUsage(token: string): Promise<UsageResponse> {
+  const orgId = await resolveOrgId(token);
   const res = await fetch(
-    `https://claude.ai/api/organizations/${ORG_ID}/usage`,
+    `https://claude.ai/api/organizations/${orgId}/usage`,
     {
       headers: {
         "Cookie": `sessionKey=${token}`,
@@ -95,24 +149,24 @@ async function pollOnce() {
   if (!token) return;
   try {
     latestUsage = await fetchUsage(token);
-    lastError = null;
+    lastErrorKind = null;
+    lastErrorMessage = null;
+    lastErrorAt = null;
     lastFetchedAt = new Date().toISOString();
   } catch (e) {
-    console.error("error:", e);
+    const message = e instanceof Error ? e.message : String(e);
     if (e instanceof AuthError) {
-      console.log(
-        "[usage_server] session key expired/invalid — clearing it; frontend will re-prompt.",
-      );
-      clearToken();
-      lastError = "auth_expired";
-      stopPolling();
+      // Could be a genuinely expired token, or a transient blip (Cloudflare
+      // challenge, brief outage, etc). We don't guess which — we surface it
+      // and let the person decide whether to reset the token themselves.
+      console.error("[usage_server] auth error on poll:", message);
+      lastErrorKind = "auth";
     } else {
-      console.error(
-        "[usage_server] poll failed:",
-        e instanceof Error ? e.message : e,
-      );
-      lastError = "fetch_failed";
+      console.error("[usage_server] poll failed:", message);
+      lastErrorKind = "network";
     }
+    lastErrorMessage = message;
+    lastErrorAt = new Date().toISOString();
   }
 }
 
@@ -151,8 +205,9 @@ async function handle(req: Request): Promise<Response> {
   if (url.pathname === "/api/status" && req.method === "GET") {
     return json({
       hasToken: !!getToken(),
-      authError: lastError === "auth_expired",
-      lastError,
+      lastErrorKind,
+      lastErrorMessage,
+      lastErrorAt,
       lastFetchedAt,
     });
   }
@@ -166,24 +221,33 @@ async function handle(req: Request): Promise<Response> {
       return json({ ok: false, error: "Paste a session key first." }, 400);
     }
     setToken(token);
-    lastError = null;
+    clearStoredOrgId(); // re-resolve in case this is a different account
+    lastErrorKind = null;
+    lastErrorMessage = null;
+    lastErrorAt = null;
     startPolling();
     return json({ ok: true });
   }
 
   if (url.pathname === "/api/usage" && req.method === "GET") {
-    if (lastError === "auth_expired") {
-      return json({ error: "auth_expired" }, 401);
-    }
-    if (!getToken() && !latestUsage) return json({ error: "no_token" }, 401);
-    return json({ usage: latestUsage, lastFetchedAt, lastError });
+    if (!getToken()) return json({ error: "no_token" }, 401);
+    return json({
+      usage: latestUsage,
+      lastFetchedAt,
+      lastErrorKind,
+      lastErrorMessage,
+      lastErrorAt,
+    });
   }
 
-  if (url.pathname === "/api/logout" && req.method === "POST") {
+  if (url.pathname === "/api/reset-token" && req.method === "POST") {
     clearToken();
+    clearStoredOrgId();
     stopPolling();
     latestUsage = null;
-    lastError = null;
+    lastErrorKind = null;
+    lastErrorMessage = null;
+    lastErrorAt = null;
     return json({ ok: true });
   }
 
@@ -256,8 +320,8 @@ const PAGE_HTML = `<!DOCTYPE html>
   .brand b{color:var(--green);}
   .topbar-right{display:flex;align-items:center;gap:14px;font-size:12px;color:var(--dim);}
   .clock span{color:var(--text);}
-  #change-key{color:var(--dim);text-decoration:none;border-bottom:1px dotted var(--dim);cursor:pointer;}
-  #change-key:hover{color:var(--text);border-color:var(--text);}
+  #reset-token{color:var(--dim);text-decoration:none;border-bottom:1px dotted var(--dim);cursor:pointer;}
+  #reset-token:hover{color:var(--text);border-color:var(--text);}
   h1{font-size:22px;margin:0 0 4px;font-weight:600;letter-spacing:.02em;}
   .sub{color:var(--dim);font-size:13px;margin-bottom:28px;}
   .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
@@ -288,6 +352,19 @@ const PAGE_HTML = `<!DOCTYPE html>
   .legend{display:flex;gap:18px;margin-top:26px;font-size:11px;color:var(--dim);flex-wrap:wrap;}
   .legend .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:middle;}
   .stamp{margin-top:30px;font-size:10.5px;color:var(--dim);opacity:.7;text-align:right;}
+  .error-banner{
+    display:none;
+    align-items:center; justify-content:space-between; gap:12px;
+    background:#1a1210; border:1px solid var(--red); color:#f2b8ae;
+    font-size:12.5px; padding:10px 14px; border-radius:2px; margin-bottom:18px;
+  }
+  .error-banner .msg{line-height:1.5;}
+  .error-banner .msg b{color:var(--red);text-transform:uppercase;font-size:10px;letter-spacing:.08em;display:block;margin-bottom:2px;}
+  .error-banner button{
+    flex-shrink:0; background:transparent; border:1px solid var(--red); color:#f2b8ae;
+    font-family:var(--mono); font-size:11px; padding:6px 10px; border-radius:2px; cursor:pointer;
+  }
+  .error-banner button:hover{background:var(--red);color:#2a0d08;}
 </style>
 </head>
 <body>
@@ -295,7 +372,7 @@ const PAGE_HTML = `<!DOCTYPE html>
   <div id="key-screen" style="display:none">
     <div class="key-card">
       <h2>Connect your session</h2>
-      <p>Paste your claude.ai <code>sessionKey</code> cookie to start polling your usage.</p>
+      <p>Paste your claude.ai <code>sessionKey</code> cookie to start polling your usage. Your organization is detected automatically — no need to look it up.</p>
       <input id="key-input" type="password" placeholder="sk-ant-sid01-..." autocomplete="off" spellcheck="false" />
       <button id="key-submit">Connect</button>
       <div id="key-error"></div>
@@ -313,12 +390,17 @@ const PAGE_HTML = `<!DOCTYPE html>
         <div class="topbar-right">
           <span id="updated-ago">--</span>
           <span class="clock">local time <span id="clock">--:--:--</span></span>
-          <a id="change-key">change key</a>
+          <a id="reset-token">reset token</a>
         </div>
       </div>
 
       <h1>Rate limit status</h1>
       <div class="sub">Session and weekly consumption for your organization, refreshed automatically.</div>
+
+      <div class="error-banner" id="error-banner">
+        <div class="msg"><b id="error-kind">error</b><span id="error-message"></span></div>
+        <button id="error-dismiss">dismiss</button>
+      </div>
 
       <div class="grid2">
         <div class="panel" data-tag="session window">
@@ -370,6 +452,8 @@ const PAGE_HTML = `<!DOCTYPE html>
   </div>
 
 <script>
+  document.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+
   function byId(id){ return document.getElementById(id); }
 
   function showScreen(name){
@@ -436,6 +520,24 @@ const PAGE_HTML = `<!DOCTYPE html>
   var resets = { fiveHour: null, sevenDay: null };
   var lastFetchedAt = null;
   var pollHandle = null;
+  var errorDismissed = false;
+
+  function showError(kind, message){
+    if(errorDismissed) return;
+    var banner = byId('error-banner');
+    byId('error-kind').textContent = kind === 'auth' ? 'possible auth issue' : 'network error';
+    byId('error-message').textContent = message || '';
+    banner.style.display = 'flex';
+  }
+  function clearError(){
+    errorDismissed = false;
+    byId('error-banner').style.display = 'none';
+  }
+
+  byId('error-dismiss').addEventListener('click', function(){
+    errorDismissed = true;
+    byId('error-banner').style.display = 'none';
+  });
 
   function renderUsage(usage){
     var fh = usage.five_hour;
@@ -523,22 +625,28 @@ const PAGE_HTML = `<!DOCTYPE html>
   function fetchUsageOnce(){
     fetch('/api/usage').then(function(r){
       if(r.status === 401){
-        return r.json().then(function(body){
-          stopDashboardPolling();
-          if(body.error === 'auth_expired'){
-            showKeyScreen('Your session expired. Paste a new key to keep monitoring.');
-          } else {
-            showKeyScreen('');
-          }
-        });
+        // no token stored server-side (e.g. someone hit /api/reset-token
+        // elsewhere) — this is the only case we auto-switch screens for.
+        stopDashboardPolling();
+        showKeyScreen('');
+        return;
       }
       return r.json().then(function(body){
         if(body.usage){ renderUsage(body.usage); }
         lastFetchedAt = body.lastFetchedAt;
         byId('updated-ago').textContent = fmtAgo(lastFetchedAt);
         byId('stamp').textContent = lastFetchedAt ? ('last poll ' + lastFetchedAt) : '';
+
+        if(body.lastErrorKind){
+          showError(body.lastErrorKind, body.lastErrorMessage);
+        } else {
+          clearError();
+        }
       });
-    }).catch(function(e){ console.error('usage fetch failed', e); });
+    }).catch(function(e){
+      console.error('usage fetch failed', e);
+      showError('network', 'Could not reach the local server.');
+    });
   }
 
   function startDashboardPolling(){
@@ -583,9 +691,10 @@ const PAGE_HTML = `<!DOCTYPE html>
     if(e.key === 'Enter'){ byId('key-submit').click(); }
   });
 
-  byId('change-key').addEventListener('click', function(){
+  byId('reset-token').addEventListener('click', function(){
     stopDashboardPolling();
-    fetch('/api/logout', { method: 'POST' }).then(function(){
+    fetch('/api/reset-token', { method: 'POST' }).then(function(){
+      clearError();
       showKeyScreen('');
     });
   });
@@ -600,11 +709,11 @@ const PAGE_HTML = `<!DOCTYPE html>
 
   // initial state
   fetch('/api/status').then(function(r){ return r.json(); }).then(function(s){
-    if(s.hasToken && !s.authError){
+    if(s.hasToken){
       showScreen('dashboard');
       startDashboardPolling();
     } else {
-      showKeyScreen(s.authError ? 'Your session expired. Paste a new key to keep monitoring.' : '');
+      showKeyScreen('');
     }
   }).catch(function(){
     showKeyScreen('');
