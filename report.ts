@@ -1,4 +1,5 @@
 #!/usr/bin/env -S deno run --allow-net --allow-env
+/// <reference lib="deno.desktop" />
 /**
  * usage_server.ts
  *
@@ -21,8 +22,7 @@
  *   (e.g. multiple orgs on one account and you want a specific one).
  *
  * Run:
- *   deno run --allow-net --allow-env usage_server.ts
- *   then open http://localhost:8787
+ *   deno desktop --allow-net --allow-env usage_server.ts
  *
  * Env vars (optional):
  *   PORT            default 8787
@@ -30,7 +30,6 @@
  */
 
 const ORG_ID_OVERRIDE = Deno.env.get("CLAUDE_ORG_ID"); // optional escape hatch
-const PORT = Number(Deno.env.get("PORT") ?? "8787");
 const POLL_INTERVAL_MS = 30_000;
 const STORAGE_KEY = "claude_session_key";
 const ORG_STORAGE_KEY = "claude_org_id";
@@ -723,5 +722,9 @@ const PAGE_HTML = `<!DOCTYPE html>
 </html>
 `;
 
-console.log(`Usage dashboard running at http://localhost:${PORT}`);
-Deno.serve({ port: PORT }, handle);
+Deno.serve(handle);
+const _win = new Deno.BrowserWindow({
+  title: "Claude Usage",
+  height: 850,
+  width: 1200,
+});
