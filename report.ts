@@ -39,6 +39,9 @@ class AuthError extends Error {}
 interface WindowUsage {
   utilization: number;
   resets_at: string;
+  limit_dollars?: number | null;
+  used_dollars?: number | null;
+  remaining_dollars?: number | null;
 }
 interface LimitEntry {
   kind: string;
@@ -52,11 +55,34 @@ interface LimitEntry {
   } | null;
   is_active: boolean;
 }
+interface ExtraUsage {
+  is_enabled: boolean;
+  monthly_limit: number | null;
+  used_credits: number | null;
+  utilization: number | null;
+  currency: string;
+  decimal_places: number;
+  disabled_reason: string | null;
+}
+interface SpendInfo {
+  enabled: boolean;
+  used?: { amount_minor: number; currency: string; exponent: number } | null;
+  limit?: number | null;
+  percent?: number;
+  disabled_reason?: string | null;
+  can_purchase_credits?: boolean;
+}
 interface UsageResponse {
   five_hour: WindowUsage;
   seven_day: WindowUsage;
-  spend?: { enabled: boolean };
+  spend?: SpendInfo;
+  extra_usage?: ExtraUsage | null;
   limits?: LimitEntry[];
+}
+interface PrepaidCredits {
+  amount: number; // minor units (cents)
+  currency: string;
+  balance_credits: number;
 }
 
 // ---- token + org id storage: Deno's built-in Web Storage, persists across restarts ----
@@ -81,6 +107,7 @@ function clearStoredOrgId() {
 
 // ---- in-memory state ----
 let latestUsage: UsageResponse | null = null;
+let latestPrepaidCredits: PrepaidCredits | null = null;
 let lastErrorKind: "auth" | "network" | null = null;
 let lastErrorMessage: string | null = null;
 let lastErrorAt: string | null = null;
@@ -143,11 +170,33 @@ async function fetchUsage(token: string): Promise<UsageResponse> {
   return await res.json();
 }
 
+async function fetchPrepaidCredits(token: string): Promise<PrepaidCredits> {
+  const orgId = await resolveOrgId(token);
+  const res = await fetch(
+    `https://claude.ai/api/organizations/${orgId}/prepaid/credits`,
+    {
+      headers: {
+        "Cookie": `sessionKey=${token}`,
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 (usage_server.ts personal script)",
+      },
+    },
+  );
+  if (res.status === 401 || res.status === 403) {
+    throw new AuthError(`auth failed: ${res.status}`);
+  }
+  if (!res.ok) {
+    throw new Error(`request failed: ${res.status} ${res.statusText}`);
+  }
+  return await res.json();
+}
+
 async function pollOnce() {
   const token = getToken();
   if (!token) return;
   try {
     latestUsage = await fetchUsage(token);
+    latestPrepaidCredits = await fetchPrepaidCredits(token);
     lastErrorKind = null;
     lastErrorMessage = null;
     lastErrorAt = null;
@@ -232,6 +281,7 @@ async function handle(req: Request): Promise<Response> {
     if (!getToken()) return json({ error: "no_token" }, 401);
     return json({
       usage: latestUsage,
+      prepaidCredits: latestPrepaidCredits,
       lastFetchedAt,
       lastErrorKind,
       lastErrorMessage,
@@ -244,6 +294,7 @@ async function handle(req: Request): Promise<Response> {
     clearStoredOrgId();
     stopPolling();
     latestUsage = null;
+    latestPrepaidCredits = null;
     lastErrorKind = null;
     lastErrorMessage = null;
     lastErrorAt = null;
@@ -411,6 +462,7 @@ const PAGE_HTML = `<!DOCTYPE html>
           <div class="meter" id="meter-5h"></div>
           <div class="countdown">resets in <span id="cd-5h">--</span></div>
           <div class="meta"><span>resets at</span><b id="reset-5h-time">--</b></div>
+          <div class="meta" id="spend-5h-row" style="display:none"><span>spend</span><b id="spend-5h">--</b></div>
         </div>
 
         <div class="panel" data-tag="7-day window">
@@ -422,6 +474,7 @@ const PAGE_HTML = `<!DOCTYPE html>
           <div class="meter" id="meter-7d"></div>
           <div class="countdown">resets in <span id="cd-7d">--</span></div>
           <div class="meta"><span>resets at</span><b id="reset-7d-time">--</b></div>
+          <div class="meta" id="spend-7d-row" style="display:none"><span>spend</span><b id="spend-7d">--</b></div>
         </div>
       </div>
 
@@ -433,6 +486,10 @@ const PAGE_HTML = `<!DOCTYPE html>
         <div class="spend-row">
           <span>Usage-based spend</span>
           <span class="tag" id="spend-tag">--</span>
+        </div>
+        <div class="spend-row" id="credits-row" style="margin-top:10px;display:none">
+          <span>Extra credits used</span>
+          <span id="credits-used">--</span>
         </div>
         <div class="note">
           Extra usage credits cover you once a plan limit is hit.
@@ -538,7 +595,7 @@ const PAGE_HTML = `<!DOCTYPE html>
     byId('error-banner').style.display = 'none';
   });
 
-  function renderUsage(usage){
+  function renderUsage(usage, prepaidCredits){
     var fh = usage.five_hour;
     var sd = usage.seven_day;
 
@@ -550,14 +607,59 @@ const PAGE_HTML = `<!DOCTYPE html>
     applyStatus('7d', sd.utilization);
     byId('reset-5h-time').textContent = fmtTime(fh.resets_at);
     byId('reset-7d-time').textContent = fmtTime(sd.resets_at);
+    renderWindowSpend('5h', fh);
+    renderWindowSpend('7d', sd);
 
     resets.fiveHour = fh.resets_at;
     resets.sevenDay = sd.resets_at;
 
-    var spendEnabled = usage.spend && usage.spend.enabled;
+    var spendEnabled = (usage.extra_usage && usage.extra_usage.is_enabled) ||
+      (usage.spend && usage.spend.enabled);
     byId('spend-tag').textContent = spendEnabled ? 'enabled' : 'disabled';
 
+    renderExtraCredits(usage.extra_usage, prepaidCredits);
     renderScopedLimits(usage);
+  }
+
+  function fmtMoney(amount, decimalPlaces, currency){
+    var symbol = currency === 'USD' ? '$' : (currency || '') + ' ';
+    return symbol + Number(amount).toFixed(decimalPlaces == null ? 2 : decimalPlaces);
+  }
+
+  // extra_usage credit amounts come back as minor units (cents), not dollars
+  function fmtMinor(amountMinor, decimalPlaces, currency){
+    var places = decimalPlaces == null ? 2 : decimalPlaces;
+    return fmtMoney(Number(amountMinor) / Math.pow(10, places), places, currency);
+  }
+
+  function renderWindowSpend(prefix, win){
+    var row = byId('spend-' + prefix + '-row');
+    if(win.used_dollars == null || win.limit_dollars == null){
+      row.style.display = 'none';
+      return;
+    }
+    row.style.display = 'flex';
+    byId('spend-' + prefix).textContent =
+      fmtMoney(win.used_dollars, 2, 'USD') + ' of ' + fmtMoney(win.limit_dollars, 2, 'USD');
+  }
+
+  function renderExtraCredits(extraUsage, prepaidCredits){
+    var row = byId('credits-row');
+    if(!extraUsage || !extraUsage.is_enabled || extraUsage.used_credits == null){
+      row.style.display = 'none';
+      return;
+    }
+    row.style.display = 'flex';
+    var text = fmtMinor(extraUsage.used_credits, extraUsage.decimal_places, extraUsage.currency);
+    if(extraUsage.monthly_limit != null){
+      text += ' of ' + fmtMinor(extraUsage.monthly_limit, extraUsage.decimal_places, extraUsage.currency) + ' monthly cap';
+    }
+    // remaining prepaid balance comes from a separate endpoint (/prepaid/credits) —
+    // the usage endpoint itself has no cap/remaining field
+    if(prepaidCredits && prepaidCredits.amount != null){
+      text += ' (' + fmtMinor(prepaidCredits.amount, 2, prepaidCredits.currency) + ' remaining)';
+    }
+    byId('credits-used').textContent = text;
   }
 
   function renderScopedLimits(usage){
@@ -631,7 +733,7 @@ const PAGE_HTML = `<!DOCTYPE html>
         return;
       }
       return r.json().then(function(body){
-        if(body.usage){ renderUsage(body.usage); }
+        if(body.usage){ renderUsage(body.usage, body.prepaidCredits); }
         lastFetchedAt = body.lastFetchedAt;
         byId('updated-ago').textContent = fmtAgo(lastFetchedAt);
         byId('stamp').textContent = lastFetchedAt ? ('last poll ' + lastFetchedAt) : '';
@@ -723,8 +825,10 @@ const PAGE_HTML = `<!DOCTYPE html>
 `;
 
 Deno.serve(handle);
-const _win = new Deno.BrowserWindow({
-  title: "Claude Usage",
-  height: 850,
-  width: 1200,
-});
+if (Deno.BrowserWindow) {
+  const _win = new Deno.BrowserWindow({
+    title: "Claude Usage",
+    height: 850,
+    width: 1200,
+  });
+}
