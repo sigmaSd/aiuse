@@ -25,16 +25,19 @@
  *   deno desktop --allow-net --allow-env usage_server.ts
  *
  * Env vars (optional):
- *   PORT            default 8787
  *   CLAUDE_ORG_ID   override auto-detected org id (usually not needed)
  */
 
-const ORG_ID_OVERRIDE = Deno.env.get("CLAUDE_ORG_ID"); // optional escape hatch
+const ORG_ID_OVERRIDE = Deno.env.get("CLAUDE_ORG_ID");
 const POLL_INTERVAL_MS = 30_000;
 const AUTH_RETRY_INTERVAL_MS = 5_000;
-const AUTH_RETRY_MAX = 6; // 6×5s = 30s before going back to normal interval
+const AUTH_RETRY_MAX = 6;
 const STORAGE_KEY = "claude_session_key";
 const ORG_STORAGE_KEY = "claude_org_id";
+
+const DEVICE_ID = crypto.randomUUID();
+const ANONYMOUS_ID = crypto.randomUUID();
+const ACTIVITY_SESSION_ID = crypto.randomUUID();
 
 class AuthError extends Error {}
 
@@ -117,6 +120,25 @@ let authErrorCount = 0;
 let lastFetchedAt: string | null = null;
 let pollTimer: ReturnType<typeof setTimeout> | undefined;
 
+function claudeHeaders(token: string): Record<string, string> {
+  return {
+    "User-Agent":
+      "Mozilla/5.0 (X11; Linux x86_64; rv:152.0) Gecko/20100101 Firefox/152.0",
+    "Accept": "*/*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Cookie": `sessionKey=${token}`,
+    "anthropic-client-platform": "web_claude_ai",
+    "anthropic-device-id": DEVICE_ID,
+    "anthropic-anonymous-id": ANONYMOUS_ID,
+    "x-activity-session-id": ACTIVITY_SESSION_ID,
+    "Referer": "https://claude.ai/",
+    "Sec-Fetch-Dest": "empty",
+    "Sec-Fetch-Mode": "cors",
+    "Sec-Fetch-Site": "same-origin",
+    "Priority": "u=0",
+  };
+}
+
 /**
  * Nobody should have to go hunting for their org id. If CLAUDE_ORG_ID isn't
  * set, we ask claude.ai which org this session key belongs to (same cookie
@@ -129,11 +151,7 @@ async function resolveOrgId(token: string): Promise<string> {
   if (cached) return cached;
 
   const res = await fetch("https://claude.ai/api/organizations", {
-    headers: {
-      "Cookie": `sessionKey=${token}`,
-      "Accept": "application/json",
-      "User-Agent": "Mozilla/5.0 (usage_server.ts personal script)",
-    },
+    headers: claudeHeaders(token),
   });
   if (res.status === 401 || res.status === 403) {
     throw new AuthError(`auth failed while resolving org id: ${res.status}`);
@@ -157,11 +175,7 @@ async function fetchUsage(token: string): Promise<UsageResponse> {
   const res = await fetch(
     `https://claude.ai/api/organizations/${orgId}/usage`,
     {
-      headers: {
-        "Cookie": `sessionKey=${token}`,
-        "Accept": "application/json",
-        "User-Agent": "Mozilla/5.0 (usage_server.ts personal script)",
-      },
+      headers: claudeHeaders(token),
     },
   );
   if (res.status === 401 || res.status === 403) {
@@ -178,11 +192,7 @@ async function fetchPrepaidCredits(token: string): Promise<PrepaidCredits> {
   const res = await fetch(
     `https://claude.ai/api/organizations/${orgId}/prepaid/credits`,
     {
-      headers: {
-        "Cookie": `sessionKey=${token}`,
-        "Accept": "application/json",
-        "User-Agent": "Mozilla/5.0 (usage_server.ts personal script)",
-      },
+      headers: claudeHeaders(token),
     },
   );
   if (res.status === 401 || res.status === 403) {
