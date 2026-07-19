@@ -31,6 +31,8 @@
 
 const ORG_ID_OVERRIDE = Deno.env.get("CLAUDE_ORG_ID"); // optional escape hatch
 const POLL_INTERVAL_MS = 30_000;
+const AUTH_RETRY_INTERVAL_MS = 5_000;
+const AUTH_RETRY_MAX = 6; // 6×5s = 30s before going back to normal interval
 const STORAGE_KEY = "claude_session_key";
 const ORG_STORAGE_KEY = "claude_org_id";
 
@@ -111,8 +113,9 @@ let latestPrepaidCredits: PrepaidCredits | null = null;
 let lastErrorKind: "auth" | "network" | null = null;
 let lastErrorMessage: string | null = null;
 let lastErrorAt: string | null = null;
+let authErrorCount = 0;
 let lastFetchedAt: string | null = null;
-let pollTimer: ReturnType<typeof setInterval> | undefined;
+let pollTimer: ReturnType<typeof setTimeout> | undefined;
 
 /**
  * Nobody should have to go hunting for their org id. If CLAUDE_ORG_ID isn't
@@ -191,6 +194,13 @@ async function fetchPrepaidCredits(token: string): Promise<PrepaidCredits> {
   return await res.json();
 }
 
+function scheduleNext() {
+  const delay = authErrorCount > 0 && authErrorCount <= AUTH_RETRY_MAX
+    ? AUTH_RETRY_INTERVAL_MS
+    : POLL_INTERVAL_MS;
+  pollTimer = setTimeout(pollOnce, delay);
+}
+
 async function pollOnce() {
   const token = getToken();
   if (!token) return;
@@ -201,9 +211,11 @@ async function pollOnce() {
     lastErrorMessage = null;
     lastErrorAt = null;
     lastFetchedAt = new Date().toISOString();
+    authErrorCount = 0;
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     if (e instanceof AuthError) {
+      authErrorCount++;
       // Could be a genuinely expired token, or a transient blip (Cloudflare
       // challenge, brief outage, etc). We don't guess which — we surface it
       // and let the person decide whether to reset the token themselves.
@@ -216,16 +228,16 @@ async function pollOnce() {
     lastErrorMessage = message;
     lastErrorAt = new Date().toISOString();
   }
+  scheduleNext();
 }
 
 function startPolling() {
   if (pollTimer !== undefined) return;
   pollOnce();
-  pollTimer = setInterval(pollOnce, POLL_INTERVAL_MS);
 }
 function stopPolling() {
   if (pollTimer !== undefined) {
-    clearInterval(pollTimer);
+    clearTimeout(pollTimer);
     pollTimer = undefined;
   }
 }
