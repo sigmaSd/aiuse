@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Claude Usage
+Exec=env LAUFEY_RUNTIME_PATH=/home/mrcool/dev/lab/cuse/io.github.sigmasd.cuse/io.github.sigmasd.cuse.so /home/mrcool/dev/lab/cuse/io.github.sigmasd.cuse/io.github.sigmasd.cuse
+Icon=io.github.sigmasd.cuse
+Type=Application
+Categories=Utility;

@@ -30,6 +30,8 @@ const DEVICE_ID = crypto.randomUUID();
 const ANONYMOUS_ID = crypto.randomUUID();
 const ACTIVITY_SESSION_ID = crypto.randomUUID();
 
+import { parseOpenCodeUsage, type OCUsageResponse } from "./parse_usage.ts";
+
 class AuthError extends Error {}
 
 // ---- types (Claude) ----
@@ -83,17 +85,6 @@ interface PrepaidCredits {
 }
 
 // ---- types (OpenCode) ----
-interface OCOneWindow {
-  status: string;
-  resetInSec: number;
-  usagePercent: number;
-}
-interface OpenCodeUsageResponse {
-  rollingUsage: OCOneWindow;
-  weeklyUsage: OCOneWindow;
-  monthlyUsage: OCOneWindow;
-}
-
 interface ProviderError {
   kind: "auth" | "network";
   message: string;
@@ -141,7 +132,7 @@ function clearOpenCodeWorkspace() {
 // ---- in-memory state ----
 let latestClaudeUsage: ClaudeUsageResponse | null = null;
 let latestClaudePrepaid: PrepaidCredits | null = null;
-let latestOpenCodeUsage: OpenCodeUsageResponse | null = null;
+let latestOpenCodeUsage: OCUsageResponse | null = null;
 
 let claudeError: ProviderError | null = null;
 let opencodeError: ProviderError | null = null;
@@ -257,7 +248,7 @@ async function resolveOpenCodeWorkspace(auth: string): Promise<string> {
 
 async function fetchOpenCodeUsage(
   auth: string,
-): Promise<OpenCodeUsageResponse> {
+): Promise<OCUsageResponse> {
   const wsId = await resolveOpenCodeWorkspace(auth);
   const res = await fetch(
     `https://opencode.ai/workspace/${wsId}/go`,
@@ -276,41 +267,15 @@ async function fetchOpenCodeUsage(
     throw new Error(`HTTP ${res.status} ${res.statusText} from ${res.url}`);
   }
   const html = await res.text();
-  const title = extractPageTitle(html);
 
-  if (!html.includes("lite.subscription.get")) {
+  try {
+    return parseOpenCodeUsage(html);
+  } catch (e) {
+    const title = extractPageTitle(html);
     console.error("[cuse] go page title:", title, "body snippet:",
       html.substring(0, 200).replace(/\s+/g, " "));
-    throw new Error(
-      `no Go subscription found on "${title}" (HTTP ${res.status})` +
-        " — visit opencode.ai/go to subscribe first",
-    );
+    throw e;
   }
-
-  const rollingPct = html.match(/rollingUsage.*?usagePercent:(\d+)/);
-  const rollingReset = html.match(/rollingUsage.*?resetInSec:(\d+)/);
-  const weeklyPct = html.match(/weeklyUsage.*?usagePercent:(\d+)/);
-  const weeklyReset = html.match(/weeklyUsage.*?resetInSec:(\d+)/);
-  const monthlyPct = html.match(/monthlyUsage.*?usagePercent:(\d+)/);
-  const monthlyReset = html.match(/monthlyUsage.*?resetInSec:(\d+)/);
-
-  return {
-    rollingUsage: {
-      status: "ok",
-      usagePercent: rollingPct ? parseInt(rollingPct[1]) : 0,
-      resetInSec: rollingReset ? parseInt(rollingReset[1]) : 0,
-    },
-    weeklyUsage: {
-      status: "ok",
-      usagePercent: weeklyPct ? parseInt(weeklyPct[1]) : 0,
-      resetInSec: weeklyReset ? parseInt(weeklyReset[1]) : 0,
-    },
-    monthlyUsage: {
-      status: "ok",
-      usagePercent: monthlyPct ? parseInt(monthlyPct[1]) : 0,
-      resetInSec: monthlyReset ? parseInt(monthlyReset[1]) : 0,
-    },
-  };
 }
 
 // ---- polling ----
