@@ -2,6 +2,6 @@
   "tasks": {
     "compile": "deno desktop --allow-net --allow-env --output io.github.sigmasd.cuse.extra.AppImage report.ts",
     "install": "deno task compile && deno run -A jsr:@sigmasd/install-app install io.github.sigmasd.cuse.extra.AppImage",
-    "uninstall": "deno run -A jsr:@sigmasd/install-app uninstall 'Claude Usage'"
+    "uninstall": "deno run -A jsr:@sigmasd/install-app uninstall 'cuse :: usage monitor'"
   }
 }
