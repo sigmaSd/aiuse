@@ -829,9 +829,11 @@ const PAGE_HTML = `<!DOCTYPE html>
   function fmtCountdownReal(ms){
     if(ms <= 0) return 'now';
     var totalSec = Math.floor(ms/1000);
-    var h = Math.floor(totalSec/3600);
+    var d = Math.floor(totalSec/86400);
+    var h = Math.floor((totalSec % 86400)/3600);
     var m = Math.floor((totalSec % 3600)/60);
     var s = totalSec % 60;
+    if(d > 0) return d + 'd ' + h + 'h ' + m + 'm';
     if(h > 0) return h + 'h ' + m + 'm ' + s + 's';
     if(m > 0) return m + 'm ' + s + 's';
     return s + 's';
@@ -840,8 +842,13 @@ const PAGE_HTML = `<!DOCTYPE html>
   function fmtAgo(iso){
     if(!iso) return '--';
     var sec = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime())/1000));
-    if(sec < 60) return 'updated ' + sec + 's ago';
-    return 'updated ' + Math.floor(sec/60) + 'm ago';
+    var d = Math.floor(sec/86400);
+    var h = Math.floor((sec % 86400)/3600);
+    var m = Math.floor((sec % 3600)/60);
+    if(d > 0) return 'updated ' + d + 'd ' + h + 'h ago';
+    if(h > 0) return 'updated ' + h + 'h ' + m + 'm ago';
+    if(m > 0) return 'updated ' + m + 'm ago';
+    return 'updated ' + sec + 's ago';
   }
 
   // Resets store the absolute reset time (ISO string) for countdown calculation.
