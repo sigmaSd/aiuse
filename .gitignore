@@ -1,2 +1,5 @@
 report
 io.github.sigmasd.cuse
+dist
+build/
+.flatpak-builder/

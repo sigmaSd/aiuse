@@ -1,7 +1,18 @@
 {
   "tasks": {
-    "compile": "deno desktop --allow-net --allow-env --output io.github.sigmasd.cuse.extra.AppImage report.ts",
-    "install": "deno task compile && deno run -A jsr:@sigmasd/install-app install io.github.sigmasd.cuse.extra.AppImage",
-    "uninstall": "deno run -A jsr:@sigmasd/install-app uninstall 'cuse :: usage monitor'"
+    "compile": "deno desktop --allow-net --allow-env report.ts"
+  },
+  "desktop": {
+    "app": {
+      "name": "Claude Usage",
+      "identifier": "io.github.sigmasd.cuse",
+      "icons": {
+        "linux": "./assets/icon.png"
+      }
+    },
+    "backend": "webview",
+    "output": {
+      "linux": "./dist/cuse"
+    }
   }
 }

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.sigmasd.cuse</id>
+  <name>Claude Usage</name>
+  <summary>Claude.ai + OpenCode Go usage monitor</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <description>
+    <p>cuse is a desktop usage monitor for Claude.ai and OpenCode Go. It polls both providers independently and displays rate-limit and usage data side-by-side in a single desktop dashboard.</p>
+    <ul>
+      <li>Session tokens are entered once in the browser (key screen), never the CLI.</li>
+      <li>Tokens persist across restarts.</li>
+      <li>Organization / workspace IDs are auto-detected.</li>
+    </ul>
+  </description>
+  <developer id="io.github.sigmasd">
+    <name>sigmaSd</name>
+  </developer>
+  <url type="homepage">https://github.com/sigmaSd/cuse</url>
+  <url type="bugtracker">https://github.com/sigmaSd/cuse/issues</url>
+  <launchable type="desktop-id">io.github.sigmasd.cuse.desktop</launchable>
+  <screenshots>
+    <screenshot type="default">
+      <image>https://raw.githubusercontent.com/sigmaSd/cuse/main/screenshot.png</image>
+    </screenshot>
+  </screenshots>
+  <releases>
+    <release version="0.2.0" date="2026-08-09"/>
+  </releases>
+  <content_rating type="oars-1.1"/>
+</component>
