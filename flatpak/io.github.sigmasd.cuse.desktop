@@ -1,8 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Claude Usage
-Comment=Claude.ai + OpenCode Go usage monitor — track rate limits and usage
-Exec=/app/lib/cuse/cuse
-Icon=io.github.sigmasd.cuse
-StartupWMClass=io.github.sigmasd.cuse
-Categories=Utility;

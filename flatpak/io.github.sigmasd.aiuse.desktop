@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=AI Usage
+Comment=AI usage monitor — Claude.ai + OpenCode Go rate limits and usage
+Exec=/app/lib/aiuse/aiuse
+Icon=io.github.sigmasd.aiuse
+StartupWMClass=io.github.sigmasd.aiuse
+Categories=Utility;

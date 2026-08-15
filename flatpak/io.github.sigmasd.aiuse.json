@@ -1,9 +1,9 @@
 {
-  "app-id": "io.github.sigmasd.cuse",
+  "app-id": "io.github.sigmasd.aiuse",
   "runtime": "org.gnome.Platform",
   "runtime-version": "50",
   "sdk": "org.gnome.Sdk",
-  "command": "cuse",
+  "command": "aiuse",
   "finish-args": [
     "--share=network",
     "--share=ipc",
@@ -13,7 +13,7 @@
   ],
   "modules": [
     {
-      "name": "cuse",
+      "name": "aiuse",
       "buildsystem": "simple",
       "build-options": {
         "env": {
@@ -23,14 +23,14 @@
       "build-commands": [
         "mkdir -p deno_dir/laufey/0.5.0/webview/x86_64-unknown-linux-gnu && (tar -xzf laufey-webview-x86_64-unknown-linux-gnu.tar.gz -C deno_dir/laufey/0.5.0/webview/x86_64-unknown-linux-gnu 2>/dev/null || true) && printf 'v0.5.0\\n' > deno_dir/laufey/0.5.0/webview/x86_64-unknown-linux-gnu/.downloaded",
         "mkdir -p deno_dir/laufey/0.5.0/webview/aarch64-unknown-linux-gnu && (tar -xzf laufey-webview-aarch64-unknown-linux-gnu.tar.gz -C deno_dir/laufey/0.5.0/webview/aarch64-unknown-linux-gnu 2>/dev/null || true) && printf 'v0.5.0\\n' > deno_dir/laufey/0.5.0/webview/aarch64-unknown-linux-gnu/.downloaded",
-        "./deno desktop --cached-only --vendor --allow-net --allow-env --output cuse report.ts",
-        "install -Dm755 cuse/cuse /app/lib/cuse/cuse",
-        "install -Dm644 cuse/cuse.so /app/lib/cuse/cuse.so",
-        "mkdir -p /app/bin && ln -s ../lib/cuse/cuse /app/bin/cuse",
-        "install -Dm644 io.github.sigmasd.cuse.desktop /app/share/applications/io.github.sigmasd.cuse.desktop",
-        "install -Dm644 io.github.sigmasd.cuse.metainfo.xml /app/share/metainfo/io.github.sigmasd.cuse.metainfo.xml",
-        "install -Dm644 assets/icon.png /app/share/icons/hicolor/512x512/apps/io.github.sigmasd.cuse.png",
-        "install -Dm644 LICENSE /app/share/licenses/io.github.sigmasd.cuse/LICENSE"
+        "./deno desktop --cached-only --vendor --allow-net --allow-env --output aiuse report.ts",
+        "install -Dm755 aiuse/aiuse /app/lib/aiuse/aiuse",
+        "install -Dm644 aiuse/aiuse.so /app/lib/aiuse/aiuse.so",
+        "mkdir -p /app/bin && ln -s ../lib/aiuse/aiuse /app/bin/aiuse",
+        "install -Dm644 flatpak/io.github.sigmasd.aiuse.desktop /app/share/applications/io.github.sigmasd.aiuse.desktop",
+        "install -Dm644 flatpak/io.github.sigmasd.aiuse.metainfo.xml /app/share/metainfo/io.github.sigmasd.aiuse.metainfo.xml",
+        "install -Dm644 assets/icon.png /app/share/icons/hicolor/512x512/apps/io.github.sigmasd.aiuse.png",
+        "install -Dm644 LICENSE /app/share/licenses/io.github.sigmasd.aiuse/LICENSE"
       ],
       "sources": [
         {

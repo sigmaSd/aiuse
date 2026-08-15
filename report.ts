@@ -1,7 +1,7 @@
 #!/usr/bin/env -S deno run --allow-net --allow-env
 /// <reference lib="deno.desktop" />
 /**
- * cuse — usage monitor for Claude.ai and OpenCode Go
+ * aiuse — usage monitor for Claude.ai and OpenCode Go
  *
  * Polls both providers independently and displays rate-limit / usage
  * data side-by-side in a single desktop dashboard.
@@ -255,7 +255,7 @@ async function fetchOpenCodeUsage(
     { headers: opencodeHeaders(auth) },
   );
 
-  console.error("[cuse] opencode go page:", JSON.stringify({
+  console.error("[aiuse] opencode go page:", JSON.stringify({
     status: res.status,
     url: res.url,
   }));
@@ -272,7 +272,7 @@ async function fetchOpenCodeUsage(
     return parseOpenCodeUsage(html);
   } catch (e) {
     const title = extractPageTitle(html);
-    console.error("[cuse] go page title:", title, "body snippet:",
+    console.error("[aiuse] go page title:", title, "body snippet:",
       html.substring(0, 200).replace(/\s+/g, " "));
     throw e;
   }
@@ -314,7 +314,7 @@ async function pollOnce() {
       } else {
         claudeError = { kind: "network", message };
       }
-      console.error("[cuse] claude poll failed:", message);
+      console.error("[aiuse] claude poll failed:", message);
     }
   }
 
@@ -332,7 +332,7 @@ async function pollOnce() {
       } else {
         opencodeError = { kind: "network", message };
       }
-      console.error("[cuse] opencode poll failed:", e instanceof Error ? e.stack || message : message);
+      console.error("[aiuse] opencode poll failed:", e instanceof Error ? e.stack || message : message);
     }
   }
 
@@ -475,7 +475,7 @@ const PAGE_HTML = `<!DOCTYPE html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>cuse :: usage monitor</title>
+<title>AI Usage</title>
 <style>
   :root{
     --bg: #0a0e0c;
@@ -654,7 +654,7 @@ const PAGE_HTML = `<!DOCTYPE html>
   <div id="dashboard" style="display:none">
     <div class="wrap">
       <div class="topbar">
-        <div class="brand">cuse <b>/</b> usage monitor</div>
+        <div class="brand">AI Usage</div>
         <div class="topbar-right">
           <span id="updated-ago">--</span>
           <span class="clock">local time <span id="clock">--:--:--</span></span>
@@ -1264,7 +1264,7 @@ const PAGE_HTML = `<!DOCTYPE html>
 Deno.serve(handle);
 if (Deno.BrowserWindow) {
   const _win = new Deno.BrowserWindow({
-    title: "cuse :: usage monitor",
+    title: "AI Usage",
     height: 850,
     width: 1200,
   });

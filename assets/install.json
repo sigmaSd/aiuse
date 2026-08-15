@@ -1,7 +1,7 @@
 {
-  "name": "cuse :: usage monitor",
-  "id": "io.github.sigmasd.cuse",
+  "name": "AI Usage",
+  "id": "io.github.sigmasd.aiuse",
   "version": "0.2.0",
-  "description": "Claude.ai + OpenCode Go usage monitor — track rate limits and usage",
+  "description": "AI usage monitor — Claude.ai + OpenCode Go rate limits and usage",
   "icon": "icon.svg"
 }

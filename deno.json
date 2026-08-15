@@ -4,15 +4,15 @@
   },
   "desktop": {
     "app": {
-      "name": "Claude Usage",
-      "identifier": "io.github.sigmasd.cuse",
+      "name": "AI Usage",
+      "identifier": "io.github.sigmasd.aiuse",
       "icons": {
         "linux": "./assets/icon.png"
       }
     },
     "backend": "webview",
     "output": {
-      "linux": "./dist/cuse"
+      "linux": "./dist/aiuse"
     }
   }
 }

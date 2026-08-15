@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>io.github.sigmasd.cuse</id>
-  <name>Claude Usage</name>
-  <summary>Claude.ai + OpenCode Go usage monitor</summary>
+  <id>io.github.sigmasd.aiuse</id>
+  <name>AI Usage</name>
+  <summary>AI usage monitor for Claude.ai and OpenCode Go</summary>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MIT</project_license>
   <description>
-    <p>cuse is a desktop usage monitor for Claude.ai and OpenCode Go. It polls both providers independently and displays rate-limit and usage data side-by-side in a single desktop dashboard.</p>
+    <p>A desktop usage monitor for Claude.ai and OpenCode Go. It polls both providers independently and displays rate-limit and usage data side-by-side in a single desktop dashboard.</p>
     <ul>
       <li>Session tokens are entered once in the browser (key screen), never the CLI.</li>
       <li>Tokens persist across restarts.</li>
@@ -16,12 +16,13 @@
   <developer id="io.github.sigmasd">
     <name>sigmaSd</name>
   </developer>
-  <url type="homepage">https://github.com/sigmaSd/cuse</url>
-  <url type="bugtracker">https://github.com/sigmaSd/cuse/issues</url>
-  <launchable type="desktop-id">io.github.sigmasd.cuse.desktop</launchable>
+  <url type="homepage">https://github.com/sigmaSd/aiuse</url>
+  <url type="bugtracker">https://github.com/sigmaSd/aiuse/issues</url>
+  <launchable type="desktop-id">io.github.sigmasd.aiuse.desktop</launchable>
   <screenshots>
     <screenshot type="default">
-      <image>https://raw.githubusercontent.com/sigmaSd/cuse/main/screenshot.png</image>
+      <image>https://raw.githubusercontent.com/sigmaSd/aiuse/main/screenshot.png</image>
+      <caption>Usage dashboard for Claude.ai and OpenCode Go</caption>
     </screenshot>
   </screenshots>
   <releases>
